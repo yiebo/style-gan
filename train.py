@@ -15,26 +15,22 @@ from util import gradient_penalty_R1
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 transform = transforms.Compose([
-  transforms.RandomAffine(degrees=0, translate=[.05, .05], scale=[.97, 1.03]),
   transforms.CenterCrop([178, 178]),
-  transforms.Resize([208, 208]),
+  transforms.Resize([128, 128]),
   transforms.RandomHorizontalFlip(0.5),
   transforms.ToTensor()
 ])
 
 dataset = Dataset('../DATASETS/celebA/data.txt',
                   '../DATASETS/celebA/img_align_celeba', transform)
-dataloader = DataLoader(dataset, batch_size=3, shuffle=True, num_workers=0)
+# dataloader = DataLoader(dataset, batch_size=3, shuffle=True, num_workers=0)
 
 writer = tensorboard.SummaryWriter(log_dir='logs')
 
 ############
 
-class_shape = len(dataset.labels)
-latent_shape = class_shape + 128
-
-generator = Generator(3, 3, latent_shape, 256).to(device)
-discriminator = Discriminator(3, class_shape).to(device)
+generator = Generator(512, 512).to(device)
+discriminator = Discriminator().to(device)
 
 ############
 
@@ -46,133 +42,98 @@ d_scheduler = torch.optim.lr_scheduler.ExponentialLR(d_optimizer, gamma=gamma)
 
 ############
 
-bce_loss = torch.nn.BCEWithLogitsLoss()
-l1_loss = torch.nn.L1Loss()
 softplus = torch.nn.Softplus()
-upsample = torch.nn.UpsamplingNearest2d(size=[20, 208])
+upsample = torch.nn.UpsamplingNearest2d(size=[128, 128])
 
 
 global_idx = 0
-mean_losses = np.zeros(8)
-for epoch in range(10):
-    # For each batch in the dataloader
-    for idx, (x, cls_real) in enumerate(tqdm(dataloader)):
-      # flip for now, shuffle(?) for larger batches
-      cls_real_in = cls_real + 0.01 * torch.randn_like(cls_real)
-      cls_fake = cls_real.flip(0)
-      cls_fake_in = cls_fake + 0.01 * torch.randn_like(cls_real)
+mean_losses = np.zeros(3)
+batch_sizes = [64, 32, 16, 8, 4]
+epoch_sizes = [16, 8, 4, 2, 1]
+for depth, (batch_size, epoch_size) in enumerate(zip(batch_sizes, epoch_sizes)):
+  dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=0)
+  data_size = len(dataloader)
+  alpha_total = (epoch_size * data_size) // 2
+  for epoch in range(epoch_size):
+      # For each batch in the dataloader
+      for idx, x in enumerate(tqdm(dataloader)):
+        alpha = min((epoch * batch_size + idx) / alpha_total, 1.0)
+        latent_random = torch.randn([batch_size, 512])
+        ############
+        x = x.to(device)
+        ############
+        y = generator(latent_random, depth=depth, alpha=alpha)
+        d_fake = discriminator(y)
 
-      cls_real_d = cls_real_in - cls_fake_in
-      cls_fake_d = cls_fake_in - cls_real_in
+        # generator loss
+        d_fake = torch.mean(d_fake)
+        loss_g = softplus(-d_fake)
 
-      latent_random = torch.randn([cls_real.size()[0], 128])
-      latent_real_d = torch.cat([cls_real_d, latent_random], 1)
-      latent_fake_d = torch.cat([cls_fake_d, -latent_random], 1)
+        g_optimizer.zero_grad()
+        loss_g.backward()
+        g_optimizer.step()
+        g_scheduler.step()
+  #################################
 
-      ############
-      x = x.to(device)
-      latent_fake_d = latent_fake_d.to(device)
-      latent_real_d = latent_real_d.to(device)
-      cls_real_in = cls_real_in.to(device)
-      cls_fake_in = cls_fake_in.to(device)
-      ############
-      y = generator(x, latent_fake_d)
-      x_ = generator(y, latent_real_d)
-      d_fake, cls_fake_ = discriminator(y)
-      cls_fake_ = torch.mean(cls_fake_, dim=[2, 3])
-      loss_g_cls = bce_loss(cls_fake_, cls_fake_in)
+        x.requires_grad = True
+        d_real = discriminator(x)
+        
+        # discriminator loss
+        d_real = torch.mean(d_real)
+        gp = gradient_penalty_R1(d_real, x)
+        
+        loss_d = softplus(d_fake) + softplus(-d_real) + gp
 
-      # generator loss
-      loss_cycle = 10 * l1_loss(x_, x)
-      d_fake = torch.mean(d_fake)
-      loss_g_x = softplus(-d_fake)
-      loss_g = loss_g_x + loss_g_cls + loss_cycle
+        d_optimizer.zero_grad()
+        loss_d.backward()
+        d_optimizer.step()
+        d_scheduler.step()
 
-      g_optimizer.zero_grad()
-      loss_g.backward()
-      g_optimizer.step()
-      g_scheduler.step()
-#################################
+        mean_losses += [
+          loss_d.item(),
+          loss_g.item(),
+          gp.item()
+          ]
+        global_idx += 1
 
-      x.requires_grad = True
-      d_real, cls_real_ = discriminator(x)
-      d_fake, cls_fake_ = discriminator(y.detach())
+        if idx % 100 == 0:
+          # if idx == 0:
+          #   writer.add_graph(generator, latent_random)
+          #   writer.add_graph(discriminator, x)
+          if idx % 2000 == 0:
+            saves = glob.glob('logs/*.pt')
+            if len(saves) == 10:
+              saves.sort(key=os.path.getmtime)
+              os.remove(saves[0])
+            
+            torch.save({
+              'global_idx': global_idx,
+              'generator_state_dict': generator.state_dict(),
+              'discriminator_state_dict': discriminator.state_dict(),
+              'g_optimizer_state_dict': g_optimizer.state_dict(),
+              'd_optimizer_state_dict': d_optimizer.state_dict(),
+              }, f'logs/model_{global_idx}.pt')
 
-      d_real = torch.mean(d_real)
-      d_fake = torch.mean(d_fake)
-
-      cls_real_ = torch.mean(cls_real_, dim=[2, 3])
-
-
-      # class losses
-      loss_d_cls = bce_loss(cls_real_, cls_real_in)
-
-      # discriminator loss
-      gp = gradient_penalty_R1(d_real, x)
-      
-      loss_d_x = softplus(d_fake) + softplus(-d_real)
-      loss_d = loss_d_x + loss_d_cls + gp
-
-      d_optimizer.zero_grad()
-      loss_d.backward()
-      d_optimizer.step()
-      d_scheduler.step()
-
-      mean_losses += [
-        loss_d_cls.item(),
-        loss_g_cls.item(), 
-        loss_d_x.item(),
-        loss_g_x.item(),
-        loss_d.item(),
-        loss_g.item(),
-        loss_cycle.item(),
-        gp.item()
-        ]
-      global_idx += 1
-
-      if idx % 100 == 0:
-        if idx == 0:
-          writer.add_graph(generator, (x, latent_fake_d))
-          writer.add_graph(discriminator, x)
-        if idx % 2000 == 0:
-          saves = glob.glob('logs/*.pt')
-          if len(saves) == 10:
-            saves.sort(key=os.path.getmtime)
-            os.remove(saves[0])
-          
-          torch.save({
-            'global_idx': global_idx,
-            'generator_state_dict': generator.state_dict(),
-            'discriminator_state_dict': discriminator.state_dict(),
-            'g_optimizer_state_dict': g_optimizer.state_dict(),
-            'd_optimizer_state_dict': d_optimizer.state_dict(),
-            }, f'logs/model_{global_idx}.pt')
-
-        mean_losses /= 50
-        writer.add_scalar('cls/d', mean_losses[0], global_idx)
-        writer.add_scalar('cls/g', mean_losses[1], global_idx)
-        writer.add_scalar('loss/d', mean_losses[2], global_idx)
-        writer.add_scalar('loss/g', mean_losses[3], global_idx)
-        writer.add_scalar('loss/total/d', mean_losses[4], global_idx)
-        writer.add_scalar('loss/total/g', mean_losses[5], global_idx)
-        writer.add_scalar('loss/cycle_loss', mean_losses[6], global_idx)
-        writer.add_scalar('loss/gp', mean_losses[7], global_idx)
-        mean_losses = np.zeros(8)
+          mean_losses /= 100
+          writer.add_scalar('loss/d', mean_losses[2], global_idx)
+          writer.add_scalar('loss/g', mean_losses[3], global_idx)
+          writer.add_scalar('loss/gp', mean_losses[7], global_idx)
+          mean_losses = np.zeros(3)
 
 
-        x = x[0:2].clamp(min=0., max=1.)
-        y = y[0:2].clamp(min=0., max=1.)
-        x_ = x_[0:2].clamp(min=0., max=1.)
-        cls_real = upsample(cls_real[0:2].unsqueeze(1).unsqueeze(1)).repeat_interleave(3, 1).to(device)
-        cls_fake = upsample(cls_fake[0:2].unsqueeze(1).unsqueeze(1)).repeat_interleave(3, 1).to(device)
+          x = x[0:2].clamp(min=0., max=1.)
+          y = y[0:2].clamp(min=0., max=1.)
+          x_ = x_[0:2].clamp(min=0., max=1.)
+          cls_real = upsample(cls_real[0:2].unsqueeze(1).unsqueeze(1)).repeat_interleave(3, 1).to(device)
+          cls_fake = upsample(cls_fake[0:2].unsqueeze(1).unsqueeze(1)).repeat_interleave(3, 1).to(device)
 
-        x = torch.cat([x, cls_real], 2)
-        y = torch.cat([y, cls_fake], 2)
-        x = torch.cat([x, y, x_], 2)
+          x = torch.cat([x, cls_real], 2)
+          y = torch.cat([y, cls_fake], 2)
+          x = torch.cat([x, y, x_], 2)
 
-        writer.add_images('img', x, global_idx)
-        writer.add_scalar('misc/lr', g_scheduler.get_lr()[0], global_idx)
-        writer.flush()
+          writer.add_images('img', x, global_idx)
+          writer.add_scalar('misc/lr', g_scheduler.get_lr()[0], global_idx)
+          writer.flush()
 
-        del x, y, x_
+          del x, y, x_
 

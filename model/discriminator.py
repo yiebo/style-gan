@@ -1,39 +1,73 @@
 import torch.nn as nn
 
 
-class D_Block(nn.Module):
+class Block(nn.Module):
   def __init__(self, in_channels, out_channels):
     super().__init__()
-    self.layer = nn.Sequential(
-      nn.Conv2d(in_channels, out_channels, 3, padding=1),
-      nn.BatchNorm2d(out_channels),
+    self.layers = nn.Sequential(
+      nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=1, padding=1),
       nn.LeakyReLU(0.2),
-      nn.MaxPool2d(2, 2)
+      nn.Conv2d(in_channels, out_channels, 3, padding=1),
+      nn.LeakyReLU(0.2),
+      nn.AvgPool2d(2, 2)
     )
   def forward(self, x):
-    x = self.layer(x)
+    x = self.layers(x)
+    return x
+
+class FinalBlock(nn.Module):
+  def __init__(self, in_channels, out_channels):
+    super().__init__()
+    
+    self.lrelu = nn.LeakyReLU(0.2)
+
+    self.conv = nn.Conv2d(512, 512, 3, padding=1)
+
+    self.dense = nn.Sequential(
+      nn.Linear(512, 512),
+      nn.LeakyReLU(0.2),
+      nn.Linear(512, 1)
+    )
+  def forward(self, x):
+    x = self.conv(x)
+    x = self.lrelu(x)
+    x = self.dense(x)
     return x
 
 class Discriminator(nn.Module):
-  def __init__(self, in_channels, latent):
+  def __init__(self):
     super().__init__()
-    layers = []
-    for channels in [64, 128, 256, 512, 1028]:
-      layers.append(D_Block(in_channels, channels))
-      in_channels = channels
-    self.layers = nn.Sequential(*layers)
 
-    self.adversarial = nn.Sequential(
-      nn.Conv2d(1028, 512, 3, padding=1),
-      nn.BatchNorm2d(512),
-      nn.LeakyReLU(0.2),
-      nn.Conv2d(512, 1, 1)
-    )
+    self.blocks = nn.ModuleList([
+      Block(512, 512),
+      Block(512, 512),
+      Block(512, 512),
+      Block(256, 512),
+      Block(128, 256),
+    ])
+    
+    self.from_rgb = nn.ModuleList([
+      nn.Conv2d(3, 512, kernel_size=1, stride=1),
+      nn.Conv2d(3, 512, kernel_size=1, stride=1),
+      nn.Conv2d(3, 512, kernel_size=1, stride=1),
+      nn.Conv2d(3, 256, kernel_size=1, stride=1),
+      nn.Conv2d(3, 128, kernel_size=1, stride=1)
+    ])
 
-    self.cls = nn.Conv2d(1028, latent, 1)
+  def forward(self, x, depth, alpha):
+    if depth > 0:
+      # added block
+      x_ = self.from_rgb[depth](x)
+      x_ = self.blocks[depth](x_)
 
-  def forward(self, x):
-    x = self.layers(x)
-    x_adv = self.adversarial(x)
-    x_cls = self.cls(x)
-    return x_adv, x_cls
+      x = self.from_rgb[depth - 1](x)
+      x = alpha * x_ + (1 - alpha) * x
+      
+      for block in self.blocks[depth-1::-1]:
+        x = block(x)
+
+    else:
+      x = self.from_rgb[0](x)
+      x = self.blocks[0](x)
+    
+    return x
