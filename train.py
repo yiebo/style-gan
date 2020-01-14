@@ -75,13 +75,14 @@ for depth, (batch_size, epoch_size) in enumerate(zip(batch_sizes, epoch_sizes)):
   #################################
 
         x.requires_grad = True
-        d_real = discriminator(x, depth=depth, alpha=alpha)
+        x_ = torch.nn.functional.adaptive_avg_pool2d(x, 4 * 2 ** (depth + 1))
+        d_real = discriminator(x_, depth=depth, alpha=alpha)
         d_fake = discriminator(y.detach(), depth=depth, alpha=alpha)
         
         # discriminator loss
         d_fake = torch.mean(d_fake)
         d_real = torch.mean(d_real)
-        gp = gradient_penalty_R1(d_real, x)
+        gp = gradient_penalty_R1(d_real, x_)
         
         loss_d = softplus(d_fake) + softplus(-d_real) + gp
 
@@ -98,7 +99,7 @@ for depth, (batch_size, epoch_size) in enumerate(zip(batch_sizes, epoch_sizes)):
         global_idx += 1
 
         if idx % 100 == 0:
-          if idx == 0:
+          # if idx == 0:
             # writer.add_graph(generator, latent_random)
             # writer.add_graph(discriminator, x)
           if idx % 2000 == 0:
@@ -122,9 +123,9 @@ for depth, (batch_size, epoch_size) in enumerate(zip(batch_sizes, epoch_sizes)):
           mean_losses = np.zeros(3)
 
 
-          x = x[0:2].clamp(min=0., max=1.)
-          x = upsample(x)
-          writer.add_images('img', x, global_idx)
+          x_ = x_[0:2].clamp(min=0., max=1.)
+          x_ = upsample(x_)
+          writer.add_images('img_', x_, global_idx)
           
           y = y[0:2].clamp(min=0., max=1.)
           y = upsample(y)
