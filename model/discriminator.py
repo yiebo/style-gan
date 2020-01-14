@@ -24,13 +24,14 @@ class FinalBlock(nn.Module):
     self.conv = nn.Conv2d(512, 512, 3, padding=1)
 
     self.dense = nn.Sequential(
-      nn.Linear(512, 512),
+      nn.Linear(4 * 4 * 512, 512),
       nn.LeakyReLU(0.2),
       nn.Linear(512, 1)
     )
   def forward(self, x):
     x = self.conv(x)
     x = self.lrelu(x)
+    x = x.view(x.shape[0], -1)
     x = self.dense(x)
     return x
 

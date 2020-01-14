@@ -48,7 +48,7 @@ upsample = torch.nn.UpsamplingNearest2d(size=[128, 128])
 
 global_idx = 0
 mean_losses = np.zeros(3)
-batch_sizes = [64, 32, 16, 8, 4]
+batch_sizes = [8, 8, 4, 2, 2]
 epoch_sizes = [16, 8, 4, 2, 1]
 for depth, (batch_size, epoch_size) in enumerate(zip(batch_sizes, epoch_sizes)):
   dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=0)
@@ -58,12 +58,11 @@ for depth, (batch_size, epoch_size) in enumerate(zip(batch_sizes, epoch_sizes)):
       # For each batch in the dataloader
       for idx, x in enumerate(tqdm(dataloader)):
         alpha = min((epoch * batch_size + idx) / alpha_total, 1.0)
-        latent_random = torch.randn([batch_size, 512])
-        ############
+        latent_random = torch.randn([batch_size, 512]).to(device)
         x = x.to(device)
         ############
         y = generator(latent_random, depth=depth, alpha=alpha)
-        d_fake = discriminator(y)
+        d_fake = discriminator(y, depth=depth, alpha=alpha)
 
         # generator loss
         d_fake = torch.mean(d_fake)
@@ -76,9 +75,11 @@ for depth, (batch_size, epoch_size) in enumerate(zip(batch_sizes, epoch_sizes)):
   #################################
 
         x.requires_grad = True
-        d_real = discriminator(x)
+        d_real = discriminator(x, depth=depth, alpha=alpha)
+        d_fake = discriminator(y.detach(), depth=depth, alpha=alpha)
         
         # discriminator loss
+        d_fake = torch.mean(d_fake)
         d_real = torch.mean(d_real)
         gp = gradient_penalty_R1(d_real, x)
         
@@ -97,9 +98,9 @@ for depth, (batch_size, epoch_size) in enumerate(zip(batch_sizes, epoch_sizes)):
         global_idx += 1
 
         if idx % 100 == 0:
-          # if idx == 0:
-          #   writer.add_graph(generator, latent_random)
-          #   writer.add_graph(discriminator, x)
+          if idx == 0:
+            # writer.add_graph(generator, latent_random)
+            # writer.add_graph(discriminator, x)
           if idx % 2000 == 0:
             saves = glob.glob('logs/*.pt')
             if len(saves) == 10:
@@ -115,25 +116,21 @@ for depth, (batch_size, epoch_size) in enumerate(zip(batch_sizes, epoch_sizes)):
               }, f'logs/model_{global_idx}.pt')
 
           mean_losses /= 100
-          writer.add_scalar('loss/d', mean_losses[2], global_idx)
-          writer.add_scalar('loss/g', mean_losses[3], global_idx)
-          writer.add_scalar('loss/gp', mean_losses[7], global_idx)
+          writer.add_scalar('loss/d', mean_losses[0], global_idx)
+          writer.add_scalar('loss/g', mean_losses[1], global_idx)
+          writer.add_scalar('loss/gp', mean_losses[2], global_idx)
           mean_losses = np.zeros(3)
 
 
           x = x[0:2].clamp(min=0., max=1.)
-          y = y[0:2].clamp(min=0., max=1.)
-          x_ = x_[0:2].clamp(min=0., max=1.)
-          cls_real = upsample(cls_real[0:2].unsqueeze(1).unsqueeze(1)).repeat_interleave(3, 1).to(device)
-          cls_fake = upsample(cls_fake[0:2].unsqueeze(1).unsqueeze(1)).repeat_interleave(3, 1).to(device)
-
-          x = torch.cat([x, cls_real], 2)
-          y = torch.cat([y, cls_fake], 2)
-          x = torch.cat([x, y, x_], 2)
-
+          x = upsample(x)
           writer.add_images('img', x, global_idx)
+          
+          y = y[0:2].clamp(min=0., max=1.)
+          y = upsample(y)
+          writer.add_images('img', y, global_idx)
           writer.add_scalar('misc/lr', g_scheduler.get_lr()[0], global_idx)
           writer.flush()
 
-          del x, y, x_
+          del x, y
 

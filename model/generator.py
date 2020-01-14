@@ -47,7 +47,7 @@ class GeneratorMapping(nn.Module):
     x = x * torch.rsqrt(torch.mean(x.pow(2), dim=1, keepdim=True) + 1e-8)
 
     x = self.mapping(x)
-    x = x.expand(2).expand(3).expand(-1, -1, 5, 2)
+    x = x.unsqueeze(2).unsqueeze(3).expand(-1, -1, 5, 2)
     return x
 
 class GeneratorSynth(nn.Module):
@@ -92,7 +92,7 @@ class GeneratorSynth(nn.Module):
     else:
       x = self.blocks[0](x, latent[:, :, 0])
       x = self.to_rgb[0](x)
-      
+
     x = self.relu(x)
 
     return x
@@ -103,16 +103,16 @@ class Generator(nn.Module):
     self.generator_mapping = GeneratorMapping(latent_in, latent_out)
     self.generator_synth = GeneratorSynth(latent_out)
 
-  def forward(self, latent, depth=5, alpha=1):
+  def forward(self, latent, depth=4, alpha=1):
     # style [B, C, block, layer]
     style = self.generator_mapping(latent)
 
     if torch.randn(1) < 0.9:
-      style_ = torch.randn_like(latent).to('cuda:0')
+      style_ = torch.randn_like(latent).to(latent.device)
       style_ = self.generator_mapping(style_)
 
-      layer_idx = torch.arange(depth * 2).view(1, 1, 5, 2)
-      cutoff = torch.randint(depth)
+      layer_idx = torch.arange(5 * 2).view(1, 1, 5, 2).to(latent.device)
+      cutoff = torch.randint((depth + 1)* 2, [1]).to(latent.device)
       style = torch.where(layer_idx < cutoff, style, style_)
 
     x = self.generator_synth(style, depth, alpha)
