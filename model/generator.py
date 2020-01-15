@@ -81,19 +81,20 @@ class GeneratorSynth(nn.Module):
         x = self.blocks[idx](x, latent[:, :, idx])
 
       x_ = self.to_rgb[depth - 1](x)
-      x_ = nn.functional.interpolate(x_, scale_factor=2, mode='bilinear')
+      x_ = nn.functional.interpolate(x_, scale_factor=2)
 
       # added block
       x = self.blocks[depth](x, latent[:, :, depth])
       x = x_added = self.to_rgb[depth](x)
 
-      x = alpha * x + (1 - alpha) * x_
-      return x, x_, x_added
+      x = alpha * x + (1.0 - alpha) * x_
     else:
       x = self.blocks[0](x, latent[:, :, 0])
       x = self.to_rgb[0](x)
 
-      return x, None, None
+      x = x_ = x_added = alpha * x + (1.0 - alpha) * x
+
+    return x, x_, x_added
 
 class Generator(nn.Module):
   def __init__(self, latent_in, latent_out):

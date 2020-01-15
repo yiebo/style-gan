@@ -6,7 +6,7 @@ from torch.utils import data
 
 class Dataset(data.Dataset):
   def __init__(self, file_path, root_dir, transform):
-    with open(f'{file_path}') as file:
+    with open(file_path) as file:
       self.data = list(csv.reader(file, delimiter=" "))[1:]
     self.root_dir = root_dir
     self.transform = transform

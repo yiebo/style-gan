@@ -16,12 +16,12 @@ class Block(nn.Module):
     return x
 
 class FinalBlock(nn.Module):
-  def __init__(self, in_channels, out_channels):
+  def __init__(self, in_channels):
     super().__init__()
     
     self.lrelu = nn.LeakyReLU(0.2)
 
-    self.conv = nn.Conv2d(512, 512, 3, padding=1)
+    self.conv = nn.Conv2d(in_channels, 512, 3, padding=1)
 
     self.dense = nn.Sequential(
       nn.Linear(4 * 4 * 512, 512),
@@ -55,6 +55,8 @@ class Discriminator(nn.Module):
       nn.Conv2d(3, 128, kernel_size=1, stride=1)
     ])
 
+    self.final_block = FinalBlock(512)
+
   def forward(self, x, depth, alpha):
     if depth > 0:
       # added block
@@ -64,7 +66,7 @@ class Discriminator(nn.Module):
       x = nn.functional.avg_pool2d(x, 2)
       x = self.from_rgb[depth - 1](x)
 
-      x = alpha * x_ + (1 - alpha) * x
+      x = alpha * x_ + (1.0 - alpha) * x
       
       for block in self.blocks[depth-1::-1]:
         x = block(x)
@@ -72,5 +74,7 @@ class Discriminator(nn.Module):
     else:
       x = self.from_rgb[0](x)
       x = self.blocks[0](x)
+
+    x = self.final_block(x)
     
     return x
