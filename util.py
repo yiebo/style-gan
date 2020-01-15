@@ -16,5 +16,5 @@ def gradient_penalty_R1(d_output, x, gamma=10):
     d_output = d_output.sum()
     gradients = torch.autograd.grad(d_output, x, create_graph=True)[0]
     gradients = gradients.flatten(1)
-    gp = gamma * torch.sum(gradients ** 2, 1).mean()
+    gp = gamma * torch.sum(gradients ** 2)
     return gp

@@ -61,7 +61,9 @@ class Discriminator(nn.Module):
       x_ = self.from_rgb[depth](x)
       x_ = self.blocks[depth](x_)
 
+      x = nn.functional.avg_pool2d(x, 2)
       x = self.from_rgb[depth - 1](x)
+
       x = alpha * x_ + (1 - alpha) * x
       
       for block in self.blocks[depth-1::-1]:

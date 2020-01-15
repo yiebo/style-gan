@@ -53,7 +53,6 @@ class GeneratorMapping(nn.Module):
 class GeneratorSynth(nn.Module):
   def __init__(self, latent):
     super().__init__()
-    self.relu = nn.ReLU()
 
     self.init_block = nn.Parameter(torch.ones(1, 512, 4, 4))
     self.init_block_bias = nn.Parameter(torch.ones(1, 512, 1, 1))
@@ -78,7 +77,7 @@ class GeneratorSynth(nn.Module):
     x = self.init_block.expand(latent.shape[0], -1, -1, -1) + self.init_block_bias
 
     if depth > 0:
-      for idx in range(depth - 1):
+      for idx in range(depth):
         x = self.blocks[idx](x, latent[:, :, idx])
 
       x_ = self.to_rgb[depth - 1](x)
@@ -86,16 +85,15 @@ class GeneratorSynth(nn.Module):
 
       # added block
       x = self.blocks[depth](x, latent[:, :, depth])
-      x = self.to_rgb[depth](x)
+      x = x_added = self.to_rgb[depth](x)
 
       x = alpha * x + (1 - alpha) * x_
+      return x, x_, x_added
     else:
       x = self.blocks[0](x, latent[:, :, 0])
       x = self.to_rgb[0](x)
 
-    x = self.relu(x)
-
-    return x
+      return x, None, None
 
 class Generator(nn.Module):
   def __init__(self, latent_in, latent_out):
@@ -103,11 +101,11 @@ class Generator(nn.Module):
     self.generator_mapping = GeneratorMapping(latent_in, latent_out)
     self.generator_synth = GeneratorSynth(latent_out)
 
-  def forward(self, latent, depth=4, alpha=1):
+  def forward(self, latent, depth, alpha):
     # style [B, C, block, layer]
     style = self.generator_mapping(latent)
 
-    if torch.randn(1) < 0.9:
+    if torch.rand(1) < 0.9:
       style_ = torch.randn_like(latent).to(latent.device)
       style_ = self.generator_mapping(style_)
 
@@ -115,6 +113,6 @@ class Generator(nn.Module):
       cutoff = torch.randint((depth + 1)* 2, [1]).to(latent.device)
       style = torch.where(layer_idx < cutoff, style, style_)
 
-    x = self.generator_synth(style, depth, alpha)
+    x, x_old, x_added = self.generator_synth(style, depth, alpha)
     
-    return x
+    return x, x_old, x_added
