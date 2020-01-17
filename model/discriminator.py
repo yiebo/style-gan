@@ -1,22 +1,24 @@
 import torch.nn as nn
+from ops import Conv2dEqualized, LinearEqualized
 
 
 class Block(nn.Module):
   def __init__(self, in_channels, out_channels):
     super().__init__()
     self.layers = nn.Sequential(
-      nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=1, padding=1),
+      Conv2dEqualized(in_channels, out_channels, kernel_size=3, stride=1, padding=1),
       nn.LeakyReLU(0.2),
-      nn.Conv2d(in_channels, out_channels, 3, padding=1),
-      nn.LeakyReLU(0.2),
-      nn.AvgPool2d(2, 2)
+      Conv2dEqualized(in_channels, out_channels, 3, padding=1),
+      nn.AvgPool2d(2, 2),
+      nn.LeakyReLU(0.2)
     )
   def forward(self, x):
     x = self.layers(x)
     return x
 
+
 class FinalBlock(nn.Module):
-  def __init__(self, in_channels):
+  def __init__(self, in_channels, out_channels):
     super().__init__()
     
     self.lrelu = nn.LeakyReLU(0.2)
@@ -24,9 +26,9 @@ class FinalBlock(nn.Module):
     self.conv = nn.Conv2d(in_channels, 512, 3, padding=1)
 
     self.dense = nn.Sequential(
-      nn.Linear(4 * 4 * 512, 512),
+      LinearEqualized(4 * 4 * 512, 512),
       nn.LeakyReLU(0.2),
-      nn.Linear(512, 1)
+      LinearEqualized(512, out_channels)
     )
   def forward(self, x):
     x = self.conv(x)
@@ -35,11 +37,13 @@ class FinalBlock(nn.Module):
     x = self.dense(x)
     return x
 
+
 class Discriminator(nn.Module):
   def __init__(self):
     super().__init__()
 
     self.blocks = nn.ModuleList([
+      FinalBlock(512, 1),
       Block(512, 512),
       Block(512, 512),
       Block(512, 512),
@@ -48,14 +52,13 @@ class Discriminator(nn.Module):
     ])
     
     self.from_rgb = nn.ModuleList([
-      nn.Conv2d(3, 512, kernel_size=1, stride=1),
-      nn.Conv2d(3, 512, kernel_size=1, stride=1),
-      nn.Conv2d(3, 512, kernel_size=1, stride=1),
-      nn.Conv2d(3, 256, kernel_size=1, stride=1),
-      nn.Conv2d(3, 128, kernel_size=1, stride=1)
+      Conv2dEqualized(3, 512, kernel_size=1, stride=1),
+      Conv2dEqualized(3, 512, kernel_size=1, stride=1),
+      Conv2dEqualized(3, 512, kernel_size=1, stride=1),
+      Conv2dEqualized(3, 512, kernel_size=1, stride=1),
+      Conv2dEqualized(3, 256, kernel_size=1, stride=1),
+      Conv2dEqualized(3, 128, kernel_size=1, stride=1)
     ])
-
-    self.final_block = FinalBlock(512)
 
   def forward(self, x, depth, alpha):
     if depth > 0:
@@ -74,7 +77,5 @@ class Discriminator(nn.Module):
     else:
       x = self.from_rgb[0](x)
       x = self.blocks[0](x)
-
-    x = self.final_block(x)
     
     return x

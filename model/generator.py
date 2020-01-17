@@ -1,43 +1,68 @@
 import torch
 import torch.nn as nn
-from ops import StyleMod, SubPixelConv, Conv2d_AdaIn
+from ops import StyleMod, Conv2dEqualized, LinearEqualized
 
 
 class Block(nn.Module):
-  def __init__(self, in_channels, out_channels, latent):
+  def __init__(self, in_channels, out_channels, latent, upscale=True):
     super().__init__()
-    self.relu = nn.ReLU()
-    
-    self.conv0 = SubPixelConv(in_channels, out_channels, scale=2, kernel_size=3, stride=1, padding=1, bias=False)
+    self.lrelu = nn.LeakyReLU(0.2)
+    if upscale:
+      self.conv0 = nn.Sequential(Conv2dEqualized(in_channels, out_channels * 2 ** 2, kernel_size=3, stride=1, padding=1, bias=False),
+                                 nn.PixelShuffle(2))
+    else:
+      self.conv0 = Conv2dEqualized(in_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False)
     self.style_mod0 = StyleMod(out_channels, latent)
     self.instance_norm0 = nn.InstanceNorm2d(out_channels)
 
-    self.conv1 = nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False)
+    self.conv1 = Conv2dEqualized(out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False)
     self.style_mod1 = StyleMod(out_channels, latent)
     self.instance_norm1 = nn.InstanceNorm2d(out_channels)
 
   def forward(self, x, latent):
     x = self.conv0(x)
-    x = self.style_mod0(x, latent[:,:,0])
+    x = self.lrelu(x)
     x = self.instance_norm0(x)
-    x = self.relu(x)
+    x = self.style_mod0(x, latent[:,:,0])
     
     x = self.conv1(x)
-    x = self.style_mod1(x, latent[:,:,1])
+    x = self.lrelu(x)
     x = self.instance_norm1(x)
-    x = self.relu(x)
+    x = self.style_mod1(x, latent[:,:,1])
     return x
 
+class BlockInit(nn.Module):
+  def __init__(self, in_channels, out_channels, latent):
+    super().__init__()
+    self.lrelu = nn.LeakyReLU(0.2)
+
+    self.style_mod0 = StyleMod(in_channels, latent)
+    self.instance_norm0 = nn.InstanceNorm2d(in_channels)
+
+    self.conv1 = Conv2dEqualized(in_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False)
+    self.style_mod1 = StyleMod(out_channels, latent)
+    self.instance_norm1 = nn.InstanceNorm2d(out_channels)
+
+  def forward(self, x, latent):
+    x = self.lrelu(x)
+    x = self.instance_norm0(x)
+    x = self.style_mod0(x, latent[:,:,0])
+    
+    x = self.conv1(x)
+    x = self.lrelu(x)
+    x = self.instance_norm1(x)
+    x = self.style_mod1(x, latent[:,:,1])
+    return x
 
 class GeneratorMapping(nn.Module):
   def __init__(self, in_channels, out_channels):
     super().__init__()
     layers = [
-      nn.Linear(in_channels, out_channels),
+      LinearEqualized(in_channels, out_channels),
       nn.LeakyReLU(0.2)
       ]
-    for _ in range(4):
-      layers.append(nn.Linear(out_channels, out_channels))
+    for _ in range(3):
+      layers.append(LinearEqualized(out_channels, out_channels))
       layers.append(nn.LeakyReLU(0.2))
   
     self.mapping = nn.Sequential(*layers)
@@ -50,6 +75,7 @@ class GeneratorMapping(nn.Module):
     x = x.unsqueeze(2).unsqueeze(3).expand(-1, -1, 5, 2)
     return x
 
+
 class GeneratorSynth(nn.Module):
   def __init__(self, latent):
     super().__init__()
@@ -58,6 +84,7 @@ class GeneratorSynth(nn.Module):
     self.init_block_bias = nn.Parameter(torch.ones(1, 512, 1, 1))
 
     self.blocks = nn.ModuleList([
+      BlockInit(512, 512, latent),
       Block(512, 512, latent),
       Block(512, 512, latent),
       Block(512, 512, latent),
@@ -66,12 +93,15 @@ class GeneratorSynth(nn.Module):
     ])
     
     self.to_rgb = nn.ModuleList([
-      nn.Conv2d(512, 3, kernel_size=1, stride=1),
-      nn.Conv2d(512, 3, kernel_size=1, stride=1),
-      nn.Conv2d(512, 3, kernel_size=1, stride=1),
-      nn.Conv2d(256, 3, kernel_size=1, stride=1),
-      nn.Conv2d(128, 3, kernel_size=1, stride=1)
+      Conv2dEqualized(512, 3, kernel_size=1, stride=1),
+      Conv2dEqualized(512, 3, kernel_size=1, stride=1),
+      Conv2dEqualized(512, 3, kernel_size=1, stride=1),
+      Conv2dEqualized(512, 3, kernel_size=1, stride=1),
+      Conv2dEqualized(256, 3, kernel_size=1, stride=1),
+      Conv2dEqualized(128, 3, kernel_size=1, stride=1),
     ])
+
+    # self.upsample = torch.nn.Upsample(scale_factor=2)
 
   def forward(self, latent, depth, alpha):
     x = self.init_block.expand(latent.shape[0], -1, -1, -1) + self.init_block_bias
@@ -81,20 +111,21 @@ class GeneratorSynth(nn.Module):
         x = self.blocks[idx](x, latent[:, :, idx])
 
       x_ = self.to_rgb[depth - 1](x)
-      x_ = nn.functional.interpolate(x_, scale_factor=2)
+      x_ = nn.functional.interpolate(x_, scale_factor=2, mode='bilinear')
+      # x_ = self.upsample(x_)
 
       # added block
       x = self.blocks[depth](x, latent[:, :, depth])
-      x = x_added = self.to_rgb[depth](x)
+      x = self.to_rgb[depth](x)
 
       x = alpha * x + (1.0 - alpha) * x_
+
     else:
       x = self.blocks[0](x, latent[:, :, 0])
       x = self.to_rgb[0](x)
 
-      x = x_ = x_added = alpha * x + (1.0 - alpha) * x
+    return x
 
-    return x, x_, x_added
 
 class Generator(nn.Module):
   def __init__(self, latent_in, latent_out):
@@ -102,11 +133,11 @@ class Generator(nn.Module):
     self.generator_mapping = GeneratorMapping(latent_in, latent_out)
     self.generator_synth = GeneratorSynth(latent_out)
 
-  def forward(self, latent, depth, alpha):
+  def forward(self, latent, depth, alpha, mix=True):
     # style [B, C, block, layer]
     style = self.generator_mapping(latent)
 
-    if torch.rand(1) < 0.9:
+    if torch.rand(1) < 0.9 and mix:
       style_ = torch.randn_like(latent).to(latent.device)
       style_ = self.generator_mapping(style_)
 
@@ -114,6 +145,6 @@ class Generator(nn.Module):
       cutoff = torch.randint((depth + 1)* 2, [1]).to(latent.device)
       style = torch.where(layer_idx < cutoff, style, style_)
 
-    x, x_old, x_added = self.generator_synth(style, depth, alpha)
+    x = self.generator_synth(style, depth, alpha)
     
-    return x, x_old, x_added
+    return x

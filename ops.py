@@ -7,14 +7,13 @@ import torch.nn.functional as F
 class StyleMod(nn.Module):
   def __init__(self, channels, latent):
     super().__init__()
-    self.style_scale = nn.Linear(latent, channels)
-    self.style_bias = nn.Linear(latent, channels)
-    self.style_scale.bias.data += 1.0
+    self.style_scale = LinearEqualized(latent, channels, gain=1.0)
+    self.style_bias = LinearEqualized(latent, channels, gain=1.0)
 
   def forward(self, x, latent):
     style_scale = self.style_scale(latent).unsqueeze(2).unsqueeze(3)
     style_bias = self.style_bias(latent).unsqueeze(2).unsqueeze(3)
-    x = x * style_scale + style_bias
+    x = x * (style_scale + 1.0) + style_bias
     return x
 
 class Conv2d_AdaIn(nn.Conv2d):
@@ -63,3 +62,45 @@ class SubPixelConv(nn.Module):
   def forward(self, x):
     x = self.sub_pixel_conv(x)
     return x
+
+
+class Conv2dEqualized(nn.Module):
+  def __init__(self, in_channels, out_channels, kernel_size, stride=1,
+               padding=0, bias=True, gain=2 ** .5):
+    super().__init__()
+    self.w_scale = gain / np.sqrt(in_channels * kernel_size ** 2 )
+    self.kernel_size = kernel_size
+    self.stride = stride
+    self.padding = padding
+    self.weight = torch.nn.Parameter(torch.randn(out_channels, in_channels, kernel_size, kernel_size) * 0.1)
+
+    if bias:
+      self.bias = torch.nn.Parameter(torch.zeros(out_channels))
+    else:
+      self.bias = None
+
+  def forward(self, x):
+    weight = self.w_scale * self.weight
+    bias = self.bias
+    if bias is not None:
+      bias = self.w_scale * bias
+    return F.conv2d(x, weight, bias=bias, stride=self.stride, padding=self.padding)
+
+class LinearEqualized(nn.Module):
+  def __init__(self, in_channels, out_channels, bias=True, gain=2 ** .5):
+    super().__init__()
+
+    self.w_scale = gain / np.sqrt(in_channels)
+    self.weight = torch.nn.Parameter(torch.randn(out_channels, in_channels) * 0.1)
+
+    if bias:
+      self.bias = torch.nn.Parameter(torch.zeros(out_channels))
+    else:
+      self.bias = None
+
+  def forward(self, x):
+    weight = self.w_scale * self.weight
+    bias = self.bias
+    if bias is not None:
+      bias = self.w_scale * bias
+    return F.linear(x, weight, bias)
