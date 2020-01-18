@@ -3,7 +3,6 @@ import csv
 import torch
 from torch.utils import data
 
-
 class Dataset(data.Dataset):
   def __init__(self, file_path, root_dir, transform):
     with open(file_path) as file:

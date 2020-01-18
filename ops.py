@@ -9,11 +9,12 @@ class StyleMod(nn.Module):
     super().__init__()
     self.style_scale = LinearEqualized(latent, channels, gain=1.0)
     self.style_bias = LinearEqualized(latent, channels, gain=1.0)
+    torch.nn.init.ones_(self.style_scale.bias)
 
   def forward(self, x, latent):
     style_scale = self.style_scale(latent).unsqueeze(2).unsqueeze(3)
     style_bias = self.style_bias(latent).unsqueeze(2).unsqueeze(3)
-    x = x * (style_scale + 1.0) + style_bias
+    x = x * style_scale + style_bias
     return x
 
 class Conv2d_AdaIn(nn.Conv2d):
