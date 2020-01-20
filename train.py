@@ -104,14 +104,19 @@ for depth, (batch_size, epoch_size) in enumerate(tqdm(zip(batch_sizes, epoch_siz
         if idx == 0 and epoch == 0:
           writer.add_graph(generator, [latent_const, depth, alpha])
           writer.add_graph(discriminator,  [x, depth, alpha])
+
+        # save at end of epoch
         if idx == data_size - 1:
           saves = glob.glob(f'logs/{logs_idx}/*.pt')
+
           if len(saves) == 10:
             saves.sort(key=os.path.getmtime)
             os.remove(saves[0])
+
           if epoch - 1 == epoch_size:
             depth += 1
             epoch = -1
+            
           torch.save({
             'depth': depth,
             'epoch': epoch + 1,
