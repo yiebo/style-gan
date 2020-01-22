@@ -55,12 +55,11 @@ for depth, (batch_size, epoch_size) in enumerate(tqdm(zip(batch_sizes, epoch_siz
   data_size = len(dataloader)
   alpha_total = (epoch_size * data_size) // 2
 
-  # prefetch
-  dataloader = BackgroundGenerator(dataloader)
 
   for epoch in tqdm(range(epoch_size), leave=False):
-    # For each batch in the dataloader
-    for idx, x in enumerate(tqdm(dataloader, leave=False)):
+    # prefetch
+    dataloader_ = BackgroundGenerator(dataloader)
+    for idx, x in enumerate(tqdm(dataloader_, total=data_size, leave=False)):
       alpha = min((epoch * data_size + idx) / alpha_total, 1.0)
       latent_random = torch.randn([batch_size, 512]).to(device)
       x = x.to(device)
@@ -68,7 +67,7 @@ for depth, (batch_size, epoch_size) in enumerate(tqdm(zip(batch_sizes, epoch_siz
       y = generator(latent_random, depth=depth, alpha=alpha)
       d_fake = discriminator(y, depth=depth, alpha=alpha)
 
-      loss_g = F.softplus(input, beta=1, threshold=20)(-d_fake).mean()
+      loss_g = F.softplus(-d_fake).mean()
 
       g_optimizer.zero_grad()
       loss_g.backward()
@@ -101,9 +100,9 @@ for depth, (batch_size, epoch_size) in enumerate(tqdm(zip(batch_sizes, epoch_siz
       summ_counter += 1
 
       if global_idx % 10 == 0 or idx == 0:
-        if idx == 0 and epoch == 0:
-          writer.add_graph(generator, [latent_const, depth, alpha])
-          writer.add_graph(discriminator,  [x, depth, alpha])
+        # if idx == 0 and epoch == 0:
+        #   writer.add_graph(generator, [latent_const, torch.tensor(depth), torch.tensor(alpha)])
+        #   writer.add_graph(discriminator,  [x, torch.tensor(depth), torch.tensor(alpha)])
 
         # save at end of epoch
         if idx == data_size - 1:
@@ -112,14 +111,11 @@ for depth, (batch_size, epoch_size) in enumerate(tqdm(zip(batch_sizes, epoch_siz
           if len(saves) == 10:
             saves.sort(key=os.path.getmtime)
             os.remove(saves[0])
-
-          if epoch - 1 == epoch_size:
-            depth += 1
-            epoch = -1
             
           torch.save({
             'depth': depth,
-            'epoch': epoch + 1,
+            'epoch': epoch,
+            'idx': idx,
             'generator_state_dict': generator.state_dict(),
             'discriminator_state_dict': discriminator.state_dict(),
             'g_optimizer_state_dict': g_optimizer.state_dict(),
