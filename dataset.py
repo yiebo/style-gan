@@ -1,6 +1,6 @@
 from PIL import Image
 import csv
-import torch
+# import torch
 from torch.utils import data
 
 class Dataset(data.Dataset):
@@ -18,5 +18,5 @@ class Dataset(data.Dataset):
 
     x = Image.open(f'{self.root_dir}/{item[0]}')
     x = self.transform(x)
-    
+
     return x

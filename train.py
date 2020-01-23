@@ -5,7 +5,6 @@ import numpy as np
 from prefetch_generator import BackgroundGenerator
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torchvision import transforms
@@ -19,10 +18,11 @@ from util import gradient_penalty_R1
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 transform = transforms.Compose([
-  transforms.CenterCrop([178, 178]),
-  transforms.Resize([128, 128]),
-  transforms.RandomHorizontalFlip(0.5),
-  transforms.ToTensor()
+    transforms.CenterCrop([178, 178]),
+    transforms.Resize([128, 128]),
+    transforms.RandomHorizontalFlip(0.5),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))
 ])
 
 dataset = Dataset('../DATASETS/celebA/data.txt',
@@ -35,9 +35,10 @@ generator = Generator(512, 512).to(device)
 discriminator = Discriminator().to(device)
 
 
-g_optimizer = torch.optim.Adam([{'params': generator.generator_mapping.parameters(), 'lr': 0.001 * 0.01},
-                                {'params': generator.generator_synth.parameters()}], 
-                                lr=0.001, betas=(0., 0.999))
+g_optimizer = torch.optim.Adam([
+    {'params': generator.generator_mapping.parameters(), 'lr': 0.001 * 0.01},
+    {'params': generator.generator_synth.parameters()}],
+    lr=0.001, betas=(0., 0.999))
 d_optimizer = torch.optim.Adam(discriminator.parameters(), lr=0.001, betas=(0., 0.99))
 
 ############
@@ -50,11 +51,10 @@ epoch_sizes = [2, 4, 4, 8, 8, 16]
 latent_const = torch.from_numpy(np.load('randn.npy')).float().to(device)
 
 for depth, (batch_size, epoch_size) in enumerate(tqdm(zip(batch_sizes, epoch_sizes), total=len(epoch_sizes))):
-  
+
   dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=0)
   data_size = len(dataloader)
   alpha_total = (epoch_size * data_size) // 2
-
 
   for epoch in tqdm(range(epoch_size), leave=False):
     # prefetch
@@ -77,12 +77,12 @@ for depth, (batch_size, epoch_size) in enumerate(tqdm(zip(batch_sizes, epoch_siz
       x_ = torch.nn.functional.adaptive_avg_pool2d(x, 4 * 2 ** depth)
       d_real = discriminator(x_, depth=depth, alpha=alpha)
       d_fake = discriminator(y.detach(), depth=depth, alpha=alpha)
-      
+
       # discriminator loss
       d_fake = F.softplus(d_fake).mean()
       d_real = F.softplus(-d_real).mean()
       gp = gradient_penalty_R1(x_, disc=discriminator, depth=depth, alpha=alpha).mean()
-      
+
       loss_d = d_fake + d_real + gp
 
       d_optimizer.zero_grad()
@@ -90,12 +90,12 @@ for depth, (batch_size, epoch_size) in enumerate(tqdm(zip(batch_sizes, epoch_siz
       d_optimizer.step()
 
       mean_losses += [
-        loss_d.item(),
-        d_real.item(),
-        d_fake.item(),
-        loss_g.item(),
-        gp.item()
-        ]
+          loss_d.item(),
+          d_real.item(),
+          d_fake.item(),
+          loss_g.item(),
+          gp.item()
+      ]
       global_idx += 1
       summ_counter += 1
 
@@ -111,16 +111,15 @@ for depth, (batch_size, epoch_size) in enumerate(tqdm(zip(batch_sizes, epoch_siz
           if len(saves) == 10:
             saves.sort(key=os.path.getmtime)
             os.remove(saves[0])
-            
-          torch.save({
-            'depth': depth,
-            'epoch': epoch,
-            'idx': idx,
-            'generator_state_dict': generator.state_dict(),
-            'discriminator_state_dict': discriminator.state_dict(),
-            'g_optimizer_state_dict': g_optimizer.state_dict(),
-            'd_optimizer_state_dict': d_optimizer.state_dict(),
-            }, f'logs/{logs_idx}/model_{depth}_{epoch}.pt')
+
+          torch.save({'depth': depth,
+                      'epoch': epoch,
+                      'idx': idx,
+                      'generator_state_dict': generator.state_dict(),
+                      'discriminator_state_dict': discriminator.state_dict(),
+                      'g_optimizer_state_dict': g_optimizer.state_dict(),
+                      'd_optimizer_state_dict': d_optimizer.state_dict(),
+                      }, f'logs/{logs_idx}/model_{depth}_{epoch}.pt')
 
         mean_losses /= summ_counter
         writer.add_scalar('loss/d', mean_losses[0], global_idx)
@@ -132,17 +131,19 @@ for depth, (batch_size, epoch_size) in enumerate(tqdm(zip(batch_sizes, epoch_siz
         mean_losses = np.zeros(5)
         summ_counter = 0
 
-        x_ = x_[:8].clamp(min=0., max=1.)
-        writer.add_images('img_', x_, global_idx)
-        
+        if idx == 0:
+          x_ = x_[:8] * 0.5 + 0.5
+          x_ = x_.clamp(min=0., max=1.)
+          writer.add_images(f'img_{depth}/real', x_, global_idx)
+
+        y = y[:8] * 0.5 + 0.5
         y = y[:8].clamp(min=0., max=1.)
-        writer.add_images('img/random', y, global_idx)
+        writer.add_images(f'img_{depth}/random', y, global_idx)
 
         with torch.no_grad():
           y = generator(latent_const, depth=depth, alpha=alpha, mix=False)
+        y = y * 0.5 + 0.5
         y = y.clamp(min=0., max=1.)
-        writer.add_images('img/const', y, global_idx)
+        writer.add_images('img_{depth}/const', y, global_idx)
 
         writer.flush()
-    
-
