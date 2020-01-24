@@ -71,7 +71,7 @@ class Conv2dEqualized(nn.Module):
     self.kernel_size = kernel_size
     self.stride = stride
     self.padding = padding
-    self.weight = torch.nn.Parameter(torch.randn(out_channels, in_channels, kernel_size, kernel_size) * 0.1)
+    self.weight = torch.nn.Parameter(torch.randn(out_channels, in_channels, kernel_size, kernel_size))
 
     if bias:
       self.bias = torch.nn.Parameter(torch.zeros(out_channels))
@@ -90,7 +90,7 @@ class LinearEqualized(nn.Module):
     super().__init__()
 
     self.w_scale = gain / np.sqrt(in_channels)
-    self.weight = torch.nn.Parameter(torch.randn(out_channels, in_channels) * 0.1)
+    self.weight = torch.nn.Parameter(torch.randn(out_channels, in_channels) * 0.5)
 
     if bias:
       self.bias = torch.nn.Parameter(torch.zeros(out_channels))

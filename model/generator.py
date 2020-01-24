@@ -147,5 +147,5 @@ class Generator(nn.Module):
       style = torch.where(layer_idx < cutoff, style, style_)
 
     x = self.generator_synth(style, depth, alpha)
-    
+
     return x

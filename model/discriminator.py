@@ -28,7 +28,7 @@ class FinalBlock(nn.Module):
     self.dense = nn.Sequential(
         LinearEqualized(4 * 4 * 512, 512),
         nn.LeakyReLU(0.2),
-        LinearEqualized(512, out_channels))
+        LinearEqualized(512, out_channels, gain=1.0))
 
   def forward(self, x):
     x = self.conv(x)
@@ -71,7 +71,7 @@ class Discriminator(nn.Module):
 
       x = alpha * x_ + (1.0 - alpha) * x
 
-      for block in self.blocks[depth-1::-1]:
+      for block in self.blocks[depth - 1::-1]:
         x = block(x)
 
     else:

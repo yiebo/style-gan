@@ -104,23 +104,6 @@ for depth, (batch_size, epoch_size) in enumerate(tqdm(zip(batch_sizes, epoch_siz
         #   writer.add_graph(generator, [latent_const, torch.tensor(depth), torch.tensor(alpha)])
         #   writer.add_graph(discriminator,  [x, torch.tensor(depth), torch.tensor(alpha)])
 
-        # save at end of epoch
-        if idx == data_size - 1:
-          saves = glob.glob(f'logs/{logs_idx}/*.pt')
-
-          if len(saves) == 10:
-            saves.sort(key=os.path.getmtime)
-            os.remove(saves[0])
-
-          torch.save({'depth': depth,
-                      'epoch': epoch,
-                      'idx': idx,
-                      'generator_state_dict': generator.state_dict(),
-                      'discriminator_state_dict': discriminator.state_dict(),
-                      'g_optimizer_state_dict': g_optimizer.state_dict(),
-                      'd_optimizer_state_dict': d_optimizer.state_dict(),
-                      }, f'logs/{logs_idx}/model_{depth}_{epoch}.pt')
-
         mean_losses /= summ_counter
         writer.add_scalar('loss/d', mean_losses[0], global_idx)
         writer.add_scalar('loss/d/real', mean_losses[1], global_idx)
@@ -144,6 +127,21 @@ for depth, (batch_size, epoch_size) in enumerate(tqdm(zip(batch_sizes, epoch_siz
           y = generator(latent_const, depth=depth, alpha=alpha, mix=False)
         y = y * 0.5 + 0.5
         y = y.clamp(min=0., max=1.)
-        writer.add_images('img_{depth}/const', y, global_idx)
+        writer.add_images(f'img_{depth}/const', y, global_idx)
 
         writer.flush()
+    # save after every epoch
+    saves = glob.glob(f'logs/{logs_idx}/*.pt')
+    if len(saves) == 10:
+      saves.sort(key=os.path.getmtime)
+      os.remove(saves[0])
+
+    torch.save({
+        'depth': depth,
+        'epoch': epoch,
+        'idx': idx,
+        'generator_state_dict': generator.state_dict(),
+        'discriminator_state_dict': discriminator.state_dict(),
+        'g_optimizer_state_dict': g_optimizer.state_dict(),
+        'd_optimizer_state_dict': d_optimizer.state_dict()},
+        f'logs/{logs_idx}/model_{depth}_{epoch}.pt')
