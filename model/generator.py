@@ -112,8 +112,7 @@ class GeneratorSynth(nn.Module):
         x = self.blocks[idx](x, latent[:, :, idx])
 
       x_ = self.to_rgb[depth - 1](x)
-      x_ = nn.functional.interpolate(x_, scale_factor=2, mode='bilinear')
-      # x_ = self.upsample(x_)
+      x_ = nn.functional.interpolate(x_, scale_factor=2, mode='nearest')
 
       # added block
       x = self.blocks[depth](x, latent[:, :, depth])

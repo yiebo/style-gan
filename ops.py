@@ -90,7 +90,7 @@ class LinearEqualized(nn.Module):
     super().__init__()
 
     self.w_scale = gain / np.sqrt(in_channels)
-    self.weight = torch.nn.Parameter(torch.randn(out_channels, in_channels) * 0.5)
+    self.weight = torch.nn.Parameter(torch.randn(out_channels, in_channels))
 
     if bias:
       self.bias = torch.nn.Parameter(torch.zeros(out_channels))

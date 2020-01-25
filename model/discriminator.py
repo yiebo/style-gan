@@ -8,7 +8,7 @@ class Block(nn.Module):
     self.layers = nn.Sequential(
         Conv2dEqualized(in_channels, out_channels, kernel_size=3, stride=1, padding=1),
         nn.LeakyReLU(0.2),
-        Conv2dEqualized(in_channels, out_channels, 3, padding=1),
+        Conv2dEqualized(out_channels, out_channels, 3, padding=1),
         nn.AvgPool2d(2, 2),
         nn.LeakyReLU(0.2))
 
