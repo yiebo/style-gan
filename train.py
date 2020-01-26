@@ -17,18 +17,8 @@ from util import gradient_penalty_R1
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-transform = transforms.Compose([
-    transforms.CenterCrop([178, 178]),
-    transforms.Resize([128, 128]),
-    transforms.RandomHorizontalFlip(0.5),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))
-])
-
-
 generator = Generator(512, 512).to(device)
 discriminator = Discriminator().to(device)
-
 
 g_optimizer = torch.optim.Adam([
     {'params': generator.generator_mapping.parameters(), 'lr': 0.001 * 0.01},
@@ -44,27 +34,35 @@ batch_sizes = [256, 128, 64, 32, 16, 8]
 epoch_sizes = [2, 4, 4, 8, 8, 16]
 latent_const = torch.from_numpy(np.load('randn.npy')).float().to(device)
 
-dataset = Dataset('../DATASETS/celebA/data.txt',
-                  '../DATASETS/celebA/img_align_celeba', transform)
 
-logs_idx = len(glob.glob('logs/*'))
-depth_start = 0
-epoch_start = 0
-global_idx = 0
+transform = transforms.Compose([
+    transforms.CenterCrop([178, 178]),
+    transforms.Resize([128, 128]),
+    transforms.RandomHorizontalFlip(0.5),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))
+])
+dataset = Dataset('c:/DATASETS/celebA/data.txt',
+                  'c:/DATASETS/celebA/img_align_celeba', transform)
 
-# logs_idx = 1
-# saves = glob.glob(f'logs/{logs_idx}/*.pt')
-# saves.sort(key=os.path.getmtime)
-# checkpoint = torch.load(saves[-1])
-# generator.load_state_dict(checkpoint['generator_state_dict'])
-# generator.train()
-# discriminator.load_state_dict(checkpoint['discriminator_state_dict'])
-# discriminator.train()
-# g_optimizer.load_state_dict(checkpoint['g_optimizer_state_dict'])
-# d_optimizer.load_state_dict(checkpoint['d_optimizer_state_dict'])
-# depth_start = checkpoint['depth']
-# epoch_start = checkpoint['epoch'] + 1
-# global_idx = checkpoint['global_idx']
+# logs_idx = len(glob.glob('logs/*'))
+# depth_start = 0
+# epoch_start = 0
+# global_idx = 0
+
+logs_idx = 3
+saves = glob.glob(f'logs/{logs_idx}/*.pt')
+saves.sort(key=os.path.getmtime)
+checkpoint = torch.load(saves[-1])
+generator.load_state_dict(checkpoint['generator_state_dict'])
+generator.train()
+discriminator.load_state_dict(checkpoint['discriminator_state_dict'])
+discriminator.train()
+g_optimizer.load_state_dict(checkpoint['g_optimizer_state_dict'])
+d_optimizer.load_state_dict(checkpoint['d_optimizer_state_dict'])
+depth_start = checkpoint['depth']
+epoch_start = checkpoint['epoch'] + 1
+global_idx = checkpoint['global_idx']
 
 writer = tensorboard.SummaryWriter(log_dir=f'logs/{logs_idx}')
 
@@ -91,10 +89,10 @@ for depth, (batch_size, epoch_size) in enumerate(tqdm(zip(batch_sizes[depth_star
       g_optimizer.step()
       #################################
 
-      x_ = torch.nn.functional.adaptive_avg_pool2d(x, 4 * 2 ** depth)
+      x_ = F.adaptive_avg_pool2d(x, 4 * 2 ** depth)
       if depth > 0 and alpha < 1.0:
-        x_old = torch.nn.functional.adaptive_avg_pool2d(x, 4 * 2 ** (depth - 1))
-        x_old = torch.nn.functional.interpolate(x_old, scale_factor=2, mode='nearest')
+        x_old = F.adaptive_avg_pool2d(x, 4 * 2 ** (depth - 1))
+        x_old = F.interpolate(x_old, scale_factor=2, mode='nearest')
         x_ = alpha * x_ + (1.0 - alpha) * x_old
 
       d_real = discriminator(x_, depth=depth, alpha=alpha)
@@ -136,7 +134,7 @@ for depth, (batch_size, epoch_size) in enumerate(tqdm(zip(batch_sizes[depth_star
         mean_losses = np.zeros(5)
         summ_counter = 0
 
-        if idx % 8 == 0:
+        if global_idx % 8 == 0:
           x_ = x_[:8] * 0.5 + 0.5
           x_ = x_.clamp(min=0., max=1.)
           writer.add_images(f'img_{depth}/real', x_, global_idx)
@@ -167,6 +165,5 @@ for depth, (batch_size, epoch_size) in enumerate(tqdm(zip(batch_sizes[depth_star
         'g_optimizer_state_dict': g_optimizer.state_dict(),
         'd_optimizer_state_dict': d_optimizer.state_dict()},
         f'logs/{logs_idx}/model_{depth}_{epoch}.pt')
-
   # reset startpoint
   epoch_start = 0
