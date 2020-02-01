@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from ops import StyleMod, Conv2dEqualized, LinearEqualized
+from ops import StyleMod, Conv2dEqualized, LinearEqualized, Noise
 
 
 class Block(nn.Module):
@@ -13,20 +13,24 @@ class Block(nn.Module):
           nn.PixelShuffle(2))
     else:
       self.conv0 = Conv2dEqualized(in_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False)
+    self.noise0 = Noise(out_channels)
     self.style_mod0 = StyleMod(out_channels, latent)
     self.instance_norm0 = nn.InstanceNorm2d(out_channels)
 
     self.conv1 = Conv2dEqualized(out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False)
+    self.noise1 = Noise(out_channels)
     self.style_mod1 = StyleMod(out_channels, latent)
     self.instance_norm1 = nn.InstanceNorm2d(out_channels)
 
   def forward(self, x, latent):
     x = self.conv0(x)
+    x = self.noise0(x)
     x = self.lrelu(x)
     x = self.instance_norm0(x)
     x = self.style_mod0(x, latent[:, :, 0])
 
     x = self.conv1(x)
+    x = self.noise1(x)
     x = self.lrelu(x)
     x = self.instance_norm1(x)
     x = self.style_mod1(x, latent[:, :, 1])
@@ -37,19 +41,23 @@ class BlockInit(nn.Module):
     super().__init__()
     self.lrelu = nn.LeakyReLU(0.2)
 
+    self.noise0 = Noise(in_channels)
     self.style_mod0 = StyleMod(in_channels, latent)
     self.instance_norm0 = nn.InstanceNorm2d(in_channels)
 
     self.conv1 = Conv2dEqualized(in_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False)
+    self.noise1 = Noise(out_channels)
     self.style_mod1 = StyleMod(out_channels, latent)
     self.instance_norm1 = nn.InstanceNorm2d(out_channels)
 
   def forward(self, x, latent):
+    x = self.noise0(x)
     x = self.lrelu(x)
     x = self.instance_norm0(x)
     x = self.style_mod0(x, latent[:, :, 0])
 
     x = self.conv1(x)
+    x = self.noise1(x)
     x = self.lrelu(x)
     x = self.instance_norm1(x)
     x = self.style_mod1(x, latent[:, :, 1])
@@ -107,7 +115,7 @@ class GeneratorSynth(nn.Module):
   def forward(self, latent, depth, alpha):
     x = self.init_block.expand(latent.shape[0], -1, -1, -1) + self.init_block_bias
 
-    if depth > 0:
+    if depth > 0 or alpha < 1.0:
       for idx in range(depth):
         x = self.blocks[idx](x, latent[:, :, idx])
 
@@ -121,8 +129,9 @@ class GeneratorSynth(nn.Module):
       x = alpha * x + (1.0 - alpha) * x_
 
     else:
-      x = self.blocks[0](x, latent[:, :, 0])
-      x = self.to_rgb[0](x)
+      for idx in range(depth + 1):
+        x = self.blocks[idx](x, latent[:, :, idx])
+      x = self.to_rgb[depth](x)
 
     return x
 

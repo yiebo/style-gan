@@ -9,7 +9,7 @@ class StyleMod(nn.Module):
     super().__init__()
     self.style_scale = LinearEqualized(latent, channels, gain=1.0)
     self.style_bias = LinearEqualized(latent, channels, gain=1.0)
-    torch.nn.init.ones_(self.style_scale.bias)
+    nn.init.ones_(self.style_scale.bias)
 
   def forward(self, x, latent):
     style_scale = self.style_scale(latent).unsqueeze(2).unsqueeze(3)
@@ -71,10 +71,10 @@ class Conv2dEqualized(nn.Module):
     self.kernel_size = kernel_size
     self.stride = stride
     self.padding = padding
-    self.weight = torch.nn.Parameter(torch.randn(out_channels, in_channels, kernel_size, kernel_size))
+    self.weight = nn.Parameter(torch.randn(out_channels, in_channels, kernel_size, kernel_size))
 
     if bias:
-      self.bias = torch.nn.Parameter(torch.zeros(out_channels))
+      self.bias = nn.Parameter(torch.zeros(out_channels))
     else:
       self.bias = None
 
@@ -90,10 +90,10 @@ class LinearEqualized(nn.Module):
     super().__init__()
 
     self.w_scale = gain / np.sqrt(in_channels)
-    self.weight = torch.nn.Parameter(torch.randn(out_channels, in_channels))
+    self.weight = nn.Parameter(torch.randn(out_channels, in_channels))
 
     if bias:
-      self.bias = torch.nn.Parameter(torch.zeros(out_channels))
+      self.bias = nn.Parameter(torch.zeros(out_channels))
     else:
       self.bias = None
 
@@ -103,3 +103,13 @@ class LinearEqualized(nn.Module):
     if bias is not None:
       bias = self.w_scale * bias
     return F.linear(x, weight, bias)
+
+class Noise(nn.Module):
+    def __init__(self, in_channels):
+      super().__init__()
+      self.weight = nn.Parameter(torch.zeros(in_channels))
+
+    def forward(self, x):
+      noise = torch.randn(x.size(0), 1, x.size(2), x.size(3)).to(x.device)
+      x = x + self.weight.view(1, -1, 1, 1) * noise
+      return x

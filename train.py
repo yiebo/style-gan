@@ -45,24 +45,24 @@ transform = transforms.Compose([
 dataset = Dataset('c:/DATASETS/celebA/data.txt',
                   'c:/DATASETS/celebA/img_align_celeba', transform)
 
-# logs_idx = len(glob.glob('logs/*'))
-# depth_start = 0
-# epoch_start = 0
-# global_idx = 0
+logs_idx = len(glob.glob('logs/*'))
+depth_start = 0
+epoch_start = 0
+global_idx = 0
 
-logs_idx = 3
-saves = glob.glob(f'logs/{logs_idx}/*.pt')
-saves.sort(key=os.path.getmtime)
-checkpoint = torch.load(saves[-1])
-generator.load_state_dict(checkpoint['generator_state_dict'])
-generator.train()
-discriminator.load_state_dict(checkpoint['discriminator_state_dict'])
-discriminator.train()
-g_optimizer.load_state_dict(checkpoint['g_optimizer_state_dict'])
-d_optimizer.load_state_dict(checkpoint['d_optimizer_state_dict'])
-depth_start = checkpoint['depth']
-epoch_start = checkpoint['epoch'] + 1
-global_idx = checkpoint['global_idx']
+# logs_idx = 3
+# saves = glob.glob(f'logs/{logs_idx}/*.pt')
+# saves.sort(key=os.path.getmtime)
+# checkpoint = torch.load(saves[-1])
+# generator.load_state_dict(checkpoint['generator_state_dict'])
+# generator.train()
+# discriminator.load_state_dict(checkpoint['discriminator_state_dict'])
+# discriminator.train()
+# g_optimizer.load_state_dict(checkpoint['g_optimizer_state_dict'])
+# d_optimizer.load_state_dict(checkpoint['d_optimizer_state_dict'])
+# depth_start = checkpoint['depth']
+# epoch_start = checkpoint['epoch'] + 1
+# global_idx = checkpoint['global_idx']
 
 writer = tensorboard.SummaryWriter(log_dir=f'logs/{logs_idx}')
 
