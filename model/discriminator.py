@@ -61,7 +61,7 @@ class Discriminator(nn.Module):
     ])
 
   def forward(self, x, depth, alpha):
-    if depth > 0 or alpha < 1.0:
+    if depth > 0 and alpha < 1.0:
       # added block
       x_ = self.from_rgb[depth](x)
       x_ = self.blocks[depth](x_)

@@ -45,24 +45,24 @@ transform = transforms.Compose([
 dataset = Dataset('c:/DATASETS/celebA/data.txt',
                   'c:/DATASETS/celebA/img_align_celeba', transform)
 
-logs_idx = len(glob.glob('logs/*'))
-depth_start = 0
-epoch_start = 0
-global_idx = 0
+# logs_idx = len(glob.glob('logs/*'))
+# depth_start = 0
+# epoch_start = 0
+# global_idx = 0
 
-# logs_idx = 3
-# saves = glob.glob(f'logs/{logs_idx}/*.pt')
-# saves.sort(key=os.path.getmtime)
-# checkpoint = torch.load(saves[-1])
-# generator.load_state_dict(checkpoint['generator_state_dict'])
-# generator.train()
-# discriminator.load_state_dict(checkpoint['discriminator_state_dict'])
-# discriminator.train()
-# g_optimizer.load_state_dict(checkpoint['g_optimizer_state_dict'])
-# d_optimizer.load_state_dict(checkpoint['d_optimizer_state_dict'])
-# depth_start = checkpoint['depth']
-# epoch_start = checkpoint['epoch'] + 1
-# global_idx = checkpoint['global_idx']
+logs_idx = 0
+saves = glob.glob(f'logs/{logs_idx}/*.pt')
+saves.sort(key=os.path.getmtime)
+checkpoint = torch.load(saves[-1])
+generator.load_state_dict(checkpoint['generator_state_dict'])
+generator.train()
+discriminator.load_state_dict(checkpoint['discriminator_state_dict'])
+discriminator.train()
+g_optimizer.load_state_dict(checkpoint['g_optimizer_state_dict'])
+d_optimizer.load_state_dict(checkpoint['d_optimizer_state_dict'])
+depth_start = checkpoint['depth']
+epoch_start = checkpoint['epoch']
+global_idx = checkpoint['global_idx']
 
 writer = tensorboard.SummaryWriter(log_dir=f'logs/{logs_idx}')
 
@@ -119,7 +119,7 @@ for depth, (batch_size, epoch_size) in enumerate(tqdm(zip(batch_sizes[depth_star
       global_idx += 1
       summ_counter += 1
 
-      if global_idx % 10 == 0 or idx == 0:
+      if global_idx % 100 == 0 or idx == 0:
         # if idx == 0 and epoch == 0:
         #   writer.add_graph(generator, [latent_const, torch.tensor(depth), torch.tensor(alpha)])
         #   writer.add_graph(discriminator,  [x, torch.tensor(depth), torch.tensor(alpha)])
@@ -155,15 +155,25 @@ for depth, (batch_size, epoch_size) in enumerate(tqdm(zip(batch_sizes[depth_star
     if len(saves) == 10:
       saves.sort(key=os.path.getmtime)
       os.remove(saves[0])
-
-    torch.save({
-        'depth': depth,
-        'epoch': epoch,
-        'global_idx': global_idx,
-        'generator_state_dict': generator.state_dict(),
-        'discriminator_state_dict': discriminator.state_dict(),
-        'g_optimizer_state_dict': g_optimizer.state_dict(),
-        'd_optimizer_state_dict': d_optimizer.state_dict()},
-        f'logs/{logs_idx}/model_{depth}_{epoch}.pt')
+    if epoch == epoch_size - 1:
+      torch.save({
+          'depth': depth + 1,
+          'epoch': 0,
+          'global_idx': global_idx,
+          'generator_state_dict': generator.state_dict(),
+          'discriminator_state_dict': discriminator.state_dict(),
+          'g_optimizer_state_dict': g_optimizer.state_dict(),
+          'd_optimizer_state_dict': d_optimizer.state_dict()},
+          f'logs/{logs_idx}/model_{depth + 1}_{0}.pt')
+    else:
+      torch.save({
+          'depth': depth,
+          'epoch': epoch + 1,
+          'global_idx': global_idx,
+          'generator_state_dict': generator.state_dict(),
+          'discriminator_state_dict': discriminator.state_dict(),
+          'g_optimizer_state_dict': g_optimizer.state_dict(),
+          'd_optimizer_state_dict': d_optimizer.state_dict()},
+          f'logs/{logs_idx}/model_{depth}_{epoch + 1}.pt')
   # reset startpoint
   epoch_start = 0
